@@ -2,30 +2,54 @@
 name: skill-god
 description: >
   Create, edit, refine, or audit Claude skills with production-grade quality
-  gates, tailored for the revfactory/harness agent-team system. Use whenever
-  the user says "make a skill", "create skill", "write a skill", "new skill",
-  "build a skill", "improve this skill", "fix skill triggering", "optimize
-  skill description", "skill isn't firing", "codify this workflow", or
-  touches any SKILL.md or .claude/skills/ path. Also use when /harness
-  (revfactory/harness Phase 4) needs to generate a skill for a newly defined
-  agent — skill-god is the opinionated skill-writer that harness delegates
-  to. Combines skill-creator's draft/test/iterate/optimize/package workflow
-  with the definitive skill-creation-guide (progressive disclosure L1/L2/L3,
-  pushy descriptions, explain-WHY writing, bundled scripts, quality rubric,
-  10 commandments) AND harness conventions (agent teams, TeamCreate,
-  SendMessage, file-based coordination via _workspace/). Works from the main
-  session (Skill tool) and from inside harness agent teams (Read tool on
-  ~/.claude/skills/skill-god/SKILL.md). Enforces a 5-criterion pre-ship gate
-  and a manual walkthrough before any skill is codified. Use INSTEAD of
-  skill-creator as the default entry point; compose WITH /harness rather
-  than replacing it. Do NOT use for editing files in .claude/agents/ (that
-  is harness's job — skill-god only writes the skill, not the agent), or
-  for generating skills from a doc URL (use firecrawl:skill-gen).
+  gates. Use whenever the user says "make a skill", "create skill", "write a
+  skill", "new skill", "build a skill", "improve this skill", "fix skill
+  triggering", "optimize skill description", "skill isn't firing", "codify
+  this workflow", or touches any SKILL.md or .claude/skills/ path. Wraps
+  Anthropic's skill-creator (machinery: evals, viewer, optimizer, packaging)
+  with enforcement gates: progressive disclosure L1/L2/L3, pushy descriptions,
+  explain-WHY writing, bundled scripts, 5-criterion quality rubric, 10
+  commandments, anti-pattern catalogue, grounding gate before codification.
+  Use INSTEAD of skill-creator as the default entry point for Claude Code
+  users — composes WITH it, never replaces it. Also handles the harness
+  agent-team mode when invoked from /harness Phase 4 (see
+  references/harness-mode.md). Do NOT use for editing files in
+  .claude/agents/, or for generating skills from a doc URL (use
+  firecrawl:skill-gen instead). Claude Code only — no Claude.ai or Cowork
+  branch yet.
 ---
 
 # Skill-God
 
 The opinionated meta-skill for building skills that actually work. Wraps `~/.claude/skills/skill-creator/` (machinery: evals, viewer, optimizer, packaging) with the enforcement gates from `references/skill-creation-guide.md` (principles: progressive disclosure, pushy descriptions, explain-why, anti-patterns, quality rubric).
+
+## Hard dependency
+
+Skill-god delegates Phases 3, 4, 5, 6 to Anthropic's `skill-creator`. **It cannot run without it.** Before invoking skill-god, verify:
+
+```bash
+ls ~/.claude/skills/skill-creator/SKILL.md
+```
+
+If missing, install it first (Anthropic's skill-creator skill ships separately). Skill-god is a thin opinionated jacket over that machinery — it does not reimplement spawning, grading, viewer, or packaging.
+
+## Platform compatibility
+
+- ✅ **Claude Code (with subagents)** — full workflow.
+- ⚠️ **Claude.ai / Cowork** — not yet branched. Use `~/.claude/skills/skill-creator/SKILL.md` directly for those environments; it has explicit Claude.ai and Cowork sections.
+
+## Principle of Lack of Surprise (security)
+
+Skills must not contain malware, exploit code, credential harvesters, or content that could compromise system security. A skill's contents should not surprise the user given its stated intent. Refuse requests to create:
+
+- Skills that exfiltrate secrets, credentials, SSH keys, tokens, or browser data.
+- Skills designed to facilitate unauthorized access, privilege escalation, or lateral movement.
+- Skills that deliberately mislabel their purpose to evade user review.
+- Skills that disable safety checks, security tooling, or audit logging.
+
+Roleplay or persona skills (e.g., "respond as a grumpy senior engineer") are fine. Defensive security skills, CTF training, and authorized pentest tooling are fine when the context is clear.
+
+This rule holds in **all execution modes**, including agent mode (which skips other phases). Do not delegate this check to a phase the agent might skip.
 
 ## The 10 Commandments
 
@@ -44,69 +68,39 @@ Load these into working memory before drafting anything.
 
 Full guide: `references/skill-creation-guide.md`. Read it when any phase is unclear.
 
-## Execution modes
+## The 5-criterion rubric (inline)
 
-Skill-god runs in three modes depending on who invokes it. The phases are the same; the machinery changes.
+Run this gate at Phase 2 (pre-test) and Phase 6 (pre-ship). Binary pass/fail. 5/5 to proceed.
 
-| Mode | Invoked by | How to load this skill | Phase 3 eval machinery | Workspace |
-|------|-----------|-----------------------|------------------------|-----------|
-| **Main session** | User in Claude Code | `Skill` tool (auto-triggered) | Full — spawn with-skill + baseline subagents per `skill-creator/SKILL.md` | `<skill>-workspace/iteration-N/` |
-| **Harness orchestrator** | `/harness` Phase 4 (generating a skill for a new agent) | Main Claude calls `Skill({skill: "skill-god"})` inside harness Phase 4 | Full (same as main) | Same as main |
-| **Harness agent / team member** | A member inside a `TeamCreate` team that needs to create or improve a skill mid-task | `Read /Users/foxy/.claude/skills/skill-god/SKILL.md` as the first tool call of the task | **Skip** — no nested subagents; hand the skill to the orchestrator to test in the main session | `<project>/_workspace/skill-god/` (file-based, per harness convention) |
+1. **Triggers correctly** — fires on relevant prompts, stays silent on near-misses. Verified with should-trigger + should-NOT-trigger eval set.
+2. **Lean context** — L1 description <150 words; L2 body <500 lines; heavy data in `references/`; deterministic work in `scripts/`.
+3. **Grounded** — built from a successful manual walkthrough; includes input→output examples from real runs.
+4. **Explains WHY** — instructions carry reasoning the model can generalize from; no rigid all-caps MUSTs without rationale.
+5. **Handles failure** — explicit error paths, diagnose-before-retry, bounded attempts, clear user-visible error output.
 
-### Why agent mode skips Phase 3
-
-Harness agents are themselves subagents. Spawning more subagents inside them for eval runs would multiply tokens and hit harness limits. Instead:
-
-1. The agent completes Phases 0, 1, 2, 4 (as edits), 5 (manual checklist only), and 6 (rubric only) on disk.
-2. The agent writes a `_workspace/skill-god/HANDOFF.md` listing: skill path, rubric verdict, open questions, recommended test prompts.
-3. The agent reports "skill drafted, ready for eval" via `SendMessage` to the orchestrator (or returns via `Agent` result).
-4. The orchestrator (main session) picks up the handoff and runs Phase 3 + 5 with full machinery.
-
-This mirrors the harness Phase 7 "진화" (evolution) pattern: file-based handoff, orchestrator does eval. See `~/.claude/skills/harness/SKILL.md` Phase 5-1 "파일 기반" data passing.
-
-## Harness integration
-
-When invoked by or inside the `/harness` system (revfactory/harness), skill-god respects these conventions:
-
-- **Agent definitions are harness's job.** Skill-god never writes files under `.claude/agents/`. If Phase 0 reveals the user wanted an agent + skill pair, hand agent creation back to `/harness` and wait for the agent definition before drafting the skill.
-- **Skill directory layout** matches harness `references/skill-writing-guide.md`: `SKILL.md` + `references/` + optional `scripts/`. No `assets/` unless the skill outputs files.
-- **1 skill ↔ 1 workflow** (harness skill-writing-guide §4-5). If the user describes two workflows, draft two skills and tell `/harness` about the second.
-- **Pushy description style** (harness skill-writing-guide §4-2) aligns with commandment #2 here.
-- **500-line body cap** (harness skill-writing-guide §4-4) aligns with commandment #1.
-- **Data schema standards** for skills that exchange structured data with other harness agents: follow `~/.claude/skills/harness/references/skill-writing-guide.md`.
-- **QA agents** building skills that validate other agents' output: read `~/.claude/skills/harness/references/qa-agent-guide.md` before drafting — QA skills have extra constraints (incremental runs, boundary-crossing verification).
-- **Team examples** for prior art: `~/.claude/skills/harness/references/team-examples.md`.
-- **CLAUDE.md pointer:** if this is the first skill in a new harness, remind the orchestrator to add a `변경 이력` row per harness SKILL.md Phase 5-4 template. Do not write CLAUDE.md yourself.
-
-## Drop-in agent for harness teams
-
-When `/harness` designs a team that will create skills mid-session (e.g., a meta-development team), copy the agent template from `assets/skill-architect-agent.md` into the target project's `.claude/agents/skill-architect.md`. That agent definition:
-
-- Reads skill-god's SKILL.md on startup (agent mode).
-- Accepts skill-drafting tasks from the team lead via `SendMessage`.
-- Writes drafts to `_workspace/skill-god/` for orchestrator handoff.
-- Does not spawn subagents.
+Partial pass = fail. Write a one-line verdict per criterion with evidence. Full template: `references/quality-rubric.md`.
 
 ## Delegated mechanics
 
-Skill-god does not reimplement skill-creator. For the heavy workflow machinery, follow the sections of `~/.claude/skills/skill-creator/SKILL.md` cited below. Skill-god adds gates around those sections — it does not replace them.
+Skill-god does not reimplement skill-creator. For workflow machinery, follow these sections of `~/.claude/skills/skill-creator/SKILL.md`:
 
-| Machinery | Owner file | Section |
-|-----------|------------|---------|
-| Spawning with-skill + baseline eval runs | `~/.claude/skills/skill-creator/SKILL.md` | "Running and evaluating test cases" |
-| Grading & aggregating benchmark | same | Step 4 |
-| Launching eval viewer | same | Step 4 |
-| Reading feedback | same | Step 5 |
-| Iteration loop | same | "Improving the skill" |
-| Description optimizer | same | "Description Optimization" + `scripts/run_loop.py` |
-| Packaging | same | "Package and Present" |
+| Machinery | Section in skill-creator/SKILL.md |
+|-----------|-----------------------------------|
+| Spawning with-skill + baseline eval runs | "Running and evaluating test cases" |
+| Grading & aggregating benchmark | Step 4 |
+| Launching eval viewer | Step 4 |
+| Reading feedback | Step 5 |
+| Iteration loop | "Improving the skill" |
+| Description optimizer | "Description Optimization" + `scripts/run_loop.py` |
+| Packaging | "Package and Present" |
+
+**Drift risk:** these section names are quoted from upstream. If skill-creator is rewritten, re-validate the pointers.
 
 ## Phase 0 — Intent capture + grounding gate
 
 Before anything else, establish what the skill is for and whether a grounded workflow exists.
 
-Ask the user (adapt to their technical level — see `skill-creator/SKILL.md` "Communicating with the user"):
+Ask the user (adapt to their technical level — see `skill-creator/SKILL.md` "Communicating with the user"; for non-coders avoid jargon like "assertion" or "JSON schema" without definition):
 
 1. What should this skill enable Claude to do?
 2. When should it trigger? (phrases, file types, contexts)
@@ -121,7 +115,7 @@ Draft the skill at `<target-path>/SKILL.md` plus any `references/`, `scripts/`, 
 
 **Frontmatter:**
 - Open `references/description-checklist.md` and fill in each item as you write the description.
-- Aim for the pushy style modelled by `skill-god`'s own description above.
+- Aim for the pushy style modelled by skill-god's own description above.
 - Verify <150 words before moving on.
 
 **Body (commandments #4, #5, #6, #7):**
@@ -137,7 +131,7 @@ Draft the skill at `<target-path>/SKILL.md` plus any `references/`, `scripts/`, 
 
 ## Phase 2 — Pre-test quality gate
 
-Before spawning any evals, run the 5-criterion rubric from `references/quality-rubric.md` against the draft. Write one-line verdicts inline (e.g. in a scratch note or directly to the user). Must pass 5/5 before proceeding. Common failures and fixes:
+Run the 5-criterion rubric (above) against the draft before spawning any evals. Write one-line verdicts. Must pass 5/5 before proceeding. Common failures and fixes:
 
 - *Lean context fail:* body over 500 lines → move sections to `references/`.
 - *Explains WHY fail:* ALL-CAPS MUSTs remain → rewrite with reasoning.
@@ -182,9 +176,20 @@ Then follow `~/.claude/skills/skill-creator/SKILL.md` "Description Optimization"
 
 ## Phase 6 — Ship gate
 
-Final rubric pass using `references/quality-rubric.md`. Must still be 5/5 after iteration. Then delegate packaging to `~/.claude/skills/skill-creator/SKILL.md` "Package and Present".
+Final rubric pass (above) against the iterated skill. Must still be 5/5. Then delegate packaging to `~/.claude/skills/skill-creator/SKILL.md` "Package and Present".
 
 Announce to the user: where the skill lives, the trigger score from Phase 5, the path to the `.skill` file if one was produced, and any known gaps you chose to defer.
+
+## Harness mode (when invoked from /harness)
+
+If `/harness` invokes skill-god, or if you are running inside a harness agent team (TeamCreate member), load `references/harness-mode.md`. It covers:
+
+- Execution-mode matrix (main / orchestrator / agent member)
+- Why agent mode skips Phase 3 and uses file-based handoff
+- Harness directory conventions and `.claude/agents/` boundary
+- The drop-in `skill-architect` agent template
+
+Do not load this file in standalone use — it adds harness-specific constraints that don't apply.
 
 ## Error recovery (for this skill itself)
 
@@ -202,7 +207,7 @@ Skill-creator ships with Anthropic and owns the mechanism: spawning subagents, r
 
 Skill-god owns the opinion: which principles from the definitive guide must hold, which gates must pass, which anti-patterns must be caught. It delegates to skill-creator for execution and enforces quality on top.
 
-One more time, the core loop under skill-god's gates:
+Core loop under skill-god's gates:
 
 1. **Phase 0** — Intent + grounding gate. Manual walkthrough if not yet run.
 2. **Phase 1** — Draft with description checklist and guide principles.
