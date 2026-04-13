@@ -19,7 +19,7 @@ Harness agents are themselves subagents. Spawning more subagents inside them for
 3. The agent reports "skill drafted, ready for eval" via `SendMessage` to the orchestrator (or returns via `Agent` result).
 4. The orchestrator (main session) picks up the handoff and runs Phase 3 + 5 with full machinery.
 
-This mirrors the harness Phase 7 evolution pattern: file-based handoff, orchestrator does eval. See `~/.claude/skills/harness/SKILL.md` Phase 5-1 file-based data passing.
+This mirrors harness's file-based handoff convention: agents write artifacts to `_workspace/`, the orchestrator (main session) consumes them. If you have the harness skill installed, see its file-based data passing section for full context — but the convention is self-contained: write `_workspace/skill-god/HANDOFF.md`, then signal the orchestrator.
 
 ## Harness conventions
 
